@@ -3,8 +3,15 @@ using System.Collections.Generic;
 
 public class TrampolineDrawer : MonoBehaviour
 {
+    public static TrampolineDrawer Instance { get; private set; }
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
     [SerializeField] private LineRenderer trampolinePrefab;
-    [SerializeField] private float bounceForce = 10f;
+    [SerializeField] private float bounceForce = 10f; // Force de base du saut
     [SerializeField] private float trampolineLifetime = 3f; // Durée de vie du trampoline
     [SerializeField] private float trampolineWidth = 0.5f; // Largeur de la zone de collision
     
@@ -15,12 +22,31 @@ public class TrampolineDrawer : MonoBehaviour
     private void Update()
     {
         HandleInput();
-        CheckCollisions();
         RemoveOldLines();
     }
 
     private void HandleInput()
     {
+        #if UNITY_EDITOR || UNITY_STANDALONE
+        // Gestion de la souris uniquement sur PC
+        if (Input.GetMouseButtonDown(0))
+        {
+            Vector3 mousePos = Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, 10f));
+            mousePos.z = 0f;
+            StartLine(mousePos);
+        }
+        else if (Input.GetMouseButton(0))
+        {
+            Vector3 mousePos = Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, 10f));
+            mousePos.z = 0f;
+            UpdateLine(mousePos);
+        }
+        else if (Input.GetMouseButtonUp(0))
+        {
+            EndLine();
+        }
+        #else
+        // Gestion du tactile uniquement sur mobile
         if (Input.touchCount > 0)
         {
             Touch touch = Input.GetTouch(0);
@@ -40,6 +66,7 @@ public class TrampolineDrawer : MonoBehaviour
                     break;
             }
         }
+        #endif
     }
 
     private void StartLine(Vector3 position)
@@ -63,43 +90,39 @@ public class TrampolineDrawer : MonoBehaviour
         if (currentLine != null)
         {
             Vector3 endPos = currentLine.GetPosition(1);
+            
+            // Vérifier si la ligne est assez longue
+            if (Vector3.Distance(startPos, endPos) < 0.1f)
+            {
+                Destroy(currentLine.gameObject);
+                return;
+            }
+
             Vector3 direction = (endPos - startPos).normalized;
             
             // Ajouter un BoxCollider au trampoline
             BoxCollider collider = currentLine.gameObject.AddComponent<BoxCollider>();
-            Vector3 center = (startPos + endPos) / 2f;
+            collider.isTrigger = true;
+            
             float length = Vector3.Distance(startPos, endPos);
             
-            collider.center = center - currentLine.transform.position;
-            collider.size = new Vector3(length, trampolineWidth, 0.1f);
+            // Positionner le GameObject au centre de la ligne
+            currentLine.transform.position = (startPos + endPos) / 2f;
             
-            // Rotation du collider pour qu'il s'aligne avec la ligne
+            // Configurer le collider
+            collider.size = new Vector3(length, trampolineWidth, 0.1f);
+            collider.center = Vector3.zero;
+            
+            // Rotation du trampoline
             float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
             currentLine.transform.rotation = Quaternion.Euler(0, 0, angle);
+
+            // Ajouter et configurer le TrampolineBehaviour
+            var behaviour = currentLine.gameObject.AddComponent<TrampolineBehaviour>();
+            behaviour.Initialize(bounceForce, direction);
             
             activeLines.Add(new TrampolineLine(currentLine, startPos, endPos, direction, Time.time));
             currentLine = null;
-        }
-    }
-
-    private void CheckCollisions()
-    {
-        foreach (var line in activeLines)
-        {
-            Collider[] colliders = Physics.OverlapBox(
-                (line.StartPos + line.EndPos) / 2f,
-                new Vector3(Vector3.Distance(line.StartPos, line.EndPos) / 2f, trampolineWidth / 2f, 0.05f),
-                Quaternion.Euler(0, 0, Mathf.Atan2(line.Direction.y, line.Direction.x) * Mathf.Rad2Deg)
-            );
-
-            foreach (var collider in colliders)
-            {
-                if (collider.TryGetComponent<FallingMario>(out FallingMario mario))
-                {
-                    Vector3 bounceDirection = Quaternion.Euler(0, 0, 45) * line.Direction;
-                    mario.Bounce(bounceDirection * bounceForce);
-                }
-            }
         }
     }
 
@@ -114,6 +137,11 @@ public class TrampolineDrawer : MonoBehaviour
             }
             return false;
         });
+    }
+
+    public void RemoveTrampolineLine(TrampolineBehaviour behaviour)
+    {
+        activeLines.RemoveAll(line => line.LineRenderer.gameObject == behaviour.gameObject);
     }
 }
 

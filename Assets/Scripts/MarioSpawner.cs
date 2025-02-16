@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Linq;
 
 public class MarioSpawner : MonoBehaviour
 {
@@ -13,6 +14,8 @@ public class MarioSpawner : MonoBehaviour
 
     private void Update()
     {
+        CleanupDestroyedMarios();
+        
         // Ne spawn que si on n'a pas dépassé le maximum de Marios
         if (Time.time >= nextSpawnTime && CountActiveMarios() < maxSimultaneousMarios)
         {
@@ -35,6 +38,20 @@ public class MarioSpawner : MonoBehaviour
 
     private int CountActiveMarios()
     {
-        return transform.childCount;
+        return transform.Cast<Transform>()
+            .Count(child => child != null && child.gameObject != null);
+    }
+
+    private void CleanupDestroyedMarios()
+    {
+        // Supprimer les références nulles des Mario détruits
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            Transform child = transform.GetChild(i);
+            if (child == null || child.gameObject == null)
+            {
+                Destroy(transform.GetChild(i).gameObject);
+            }
+        }
     }
 } 
